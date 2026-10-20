@@ -4,6 +4,7 @@
 #pragma once
 
 #include <map>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -303,6 +304,9 @@ public:
     s32 GetMemoryPoolStats(::Libraries::Kernel::OrbisKernelMemoryPoolBlockStats* stats);
 
     void InvalidateMemory(VAddr addr, u64 size) const;
+
+    /// Calls fn(base, size) for every mapped, CPU-readable range while holding the shared lock.
+    void ForEachReadableRange(const std::function<void(VAddr, u64)>& fn);
 
 private:
     VMAHandle FindVMA(VAddr target) {

@@ -364,6 +364,9 @@ private:
 
     /// Copies image memory back to CPU.
     void DownloadImageMemory(ImageId image_id, bool sync = false);
+    void ApplyPortraitOverride(Image& image);
+    void InstallPortrait(Image& image, u32 player_id);
+    void RefreshPortraitOnBind(Image& image);
 
     /// Register image in the page table
     void RegisterImage(ImageId image);
