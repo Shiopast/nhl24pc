@@ -1664,4 +1664,14 @@ MemoryManager::PhysHandle MemoryManager::Split(PhysMap& map, PhysHandle phys_han
     return map.emplace_hint(std::next(phys_handle), new_area.base, new_area);
 }
 
+void MemoryManager::ForEachReadableRange(const std::function<void(VAddr, u64)>& fn) {
+    std::shared_lock lk{mutex};
+    for (const auto& [base, vma] : vma_map) {
+        if (!vma.IsMapped() || vma.size == 0 || (static_cast<u32>(vma.prot) & 1u) == 0) {
+            continue;
+        }
+        fn(vma.base, vma.size);
+    }
+}
+
 } // namespace Core

@@ -29,6 +29,14 @@
 #include "video_core/texture_cache/host_compatibility.h"
 #include "video_core/texture_cache/texture_cache.h"
 #include <vulkan/vulkan_format_traits.hpp>
+#include <atomic>
+#include <chrono>
+#include <unordered_map>
+#include <mutex>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <vector>
 #include "video_core/texture_cache/tile_manager.h"
 
 namespace VideoCore {
@@ -129,6 +137,514 @@ void TextureCache::DownloadImageMemory(ImageId image_id, bool sync) {
                 runtime.GetStagingPool().FreeDeferred(download);
             });
     }
+}
+
+namespace {
+struct PortraitDds {
+    bool ok{};
+    std::vector<u8> data;
+    u32 mips{};
+};
+
+PortraitDds LoadPortraitDds(const std::filesystem::path& p) {
+    PortraitDds d;
+    std::ifstream in(p, std::ios::binary);
+    if (!in) {
+        return d;
+    }
+    std::vector<u8> file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    if (file.size() < 128 || std::memcmp(file.data(), "DDS ", 4) != 0) {
+        LOG_WARNING(Render, "portrait override {} is not a DDS file", p.string());
+        return d;
+    }
+    u32 w, h, mips;
+    std::memcpy(&h, file.data() + 12, 4);
+    std::memcpy(&w, file.data() + 16, 4);
+    std::memcpy(&mips, file.data() + 28, 4);
+    if (w != 512 || h != 340 || std::memcmp(file.data() + 84, "DXT5", 4) != 0 || mips == 0) {
+        LOG_WARNING(Render, "portrait override {} must be 512x340 DXT5 ({}x{}, mips {})", p.string(), w,
+                    h, mips);
+        return d;
+    }
+    d.data.assign(file.begin() + 128, file.end());
+    d.mips = mips;
+    d.ok = true;
+    LOG_INFO(Render, "portrait override loaded from {} ({} mips, {} bytes)", p.string(), mips,
+             d.data.size());
+    return d;
+}
+
+struct PortraitCfg {
+    std::filesystem::path dir;
+    PortraitDds fallback;
+    u64 hash{0xc0b20d9c0948575aULL};
+    bool dir_exists{};
+    std::unordered_set<u32> ids; // players that have a <id>.dds file
+};
+
+const PortraitCfg& GetPortraitCfg() {
+    static const PortraitCfg cfg = [] {
+        PortraitCfg c;
+        std::filesystem::path p;
+        if (const char* e = std::getenv("NHLPORT_PORTRAIT_OVERRIDE"); e && *e) {
+            p = e;
+            c.dir = p.parent_path();
+        } else {
+            c.dir = Common::FS::GetUserPath(Common::FS::PathType::UserDir) / "portrait_override";
+            p = c.dir / "silhouette.dds";
+        }
+        if (const char* h = std::getenv("NHLPORT_SILHOUETTE_HASH"); h && *h) {
+            c.hash = std::strtoull(h, nullptr, 16);
+        }
+        std::error_code ec;
+        c.dir_exists = std::filesystem::is_directory(c.dir, ec);
+        if (c.dir_exists) {
+            c.fallback = LoadPortraitDds(p);
+            for (const auto& e : std::filesystem::directory_iterator(c.dir, ec)) {
+                const auto name = e.path().stem().string();
+                if (e.path().extension() != ".dds" || name.empty() || name.size() > 9 ||
+                    name.find_first_not_of("0123456789") != std::string::npos) {
+                    continue;
+                }
+                c.ids.insert(static_cast<u32>(std::strtoul(name.c_str(), nullptr, 10)));
+            }
+            LOG_INFO(Render, "portrait: {} player pictures found in {}", c.ids.size(),
+                     c.dir.string());
+        }
+        return c;
+    }();
+    return cfg;
+}
+
+// The game keeps small records {player id, 0, 0x13, ...} that change to the id of the player whose
+// screen is open. This finds them (ids that have a picture file).
+size_t ScanSelectedIdChunk(const u32* p, size_t n, u64* idx_out, size_t cap,
+                           const std::unordered_set<u32>& ids, bool any_id = false) {
+    size_t found = 0;
+#ifdef _MSC_VER
+    __try {
+#endif
+        for (size_t i = 0; i + 3 < n; ++i) {
+            if (p[i + 2] == 0x13u && p[i + 1] == 0u && (p[i + 3] == 0x746e6572u || p[i + 3] == 0u) &&
+                p[i] != 0u && p[i] < 70000u && (any_id ? p[i] >= 100u : ids.count(p[i]) != 0)) {
+                if (found < cap) {
+                    idx_out[found] = i;
+                }
+                ++found;
+            }
+        }
+#ifdef _MSC_VER
+    } __except (1) {
+        return static_cast<size_t>(-1);
+    }
+#endif
+    return found;
+}
+
+std::atomic<u32> selection_generation{0}; // bumped whenever the detected player changes
+
+bool ReadU32Safe(VAddr addr, u32* out) {
+#ifdef _MSC_VER
+    __try {
+        *out = *reinterpret_cast<const volatile u32*>(addr);
+    } __except (1) {
+        return false;
+    }
+    return true;
+#else
+    *out = *reinterpret_cast<const volatile u32*>(addr);
+    return true;
+#endif
+}
+
+// Tracks the "selected player" records. A full scan (slow, ~1-2 s) finds records holding an id that has
+// a picture; afterwards only those addresses are read (cheap) and a change in them means another player
+// was opened. Returns the id of a player with a picture, or 0 for any other player.
+u32 DetectSelectedPlayerId(bool allow_full_scan, bool force_rescan = false) {
+    struct Tracked {
+        u32 last{};
+        u32 changes{};
+    };
+    static std::mutex mtx;
+    static std::unordered_map<VAddr, Tracked> tracked;
+    static u32 current = 0;
+    static std::chrono::steady_clock::time_point last_full{};
+    static bool had_full = false;
+    static VAddr win_lo = 0, win_hi = 0; // where the records live (limits later rescans)
+    const auto& ids = GetPortraitCfg().ids;
+    if (ids.empty()) {
+        return 0;
+    }
+    std::scoped_lock lk{mtx};
+    if (tracked.empty() || force_rescan) {
+        const auto now = std::chrono::steady_clock::now();
+        if (!force_rescan &&
+            (!allow_full_scan || (had_full && now - last_full < std::chrono::seconds(15)))) {
+            return current;
+        }
+        const u32 prev_current = current;
+        std::unordered_set<VAddr> old_addrs;
+        for (const auto& [a, t] : tracked) {
+            old_addrs.insert(a);
+        }
+        tracked.clear();
+        had_full = true;
+        last_full = now;
+        constexpr u64 kChunk = 1u << 20;
+        constexpr u64 kOverlap = 16;
+        std::vector<u64> idx(65536);
+        std::unordered_map<u32, u32> counts;
+        std::vector<std::pair<u32, u32>> recs; // (id, word 4 after the id)
+        std::vector<VAddr> recs_addr;
+        Core::Memory::Instance()->ForEachReadableRange([&](VAddr base, u64 size) {
+            if (win_hi != 0) {
+                const VAddr lo = std::max(base, win_lo);
+                const VAddr hi = std::min<VAddr>(base + size, win_hi);
+                if (lo >= hi) {
+                    return;
+                }
+                base = lo;
+                size = hi - lo;
+            }
+            for (u64 off = 0; off < size; off += kChunk - kOverlap) {
+                const u64 bytes = std::min<u64>(kChunk, size - off);
+                const u32* p = reinterpret_cast<const u32*>(base + off);
+                const size_t f = ScanSelectedIdChunk(p, bytes / 4, idx.data(), idx.size(), ids);
+                if (f != static_cast<size_t>(-1)) {
+                    for (size_t k = 0; k < std::min(f, idx.size()); ++k) {
+                        const VAddr a = base + off + idx[k] * 4;
+                        if (tracked.emplace(a, Tracked{p[idx[k]], 0}).second) {
+                            ++counts[p[idx[k]]];
+                            if (idx[k] + 4 < bytes / 4) {
+                                recs.emplace_back(p[idx[k]], p[idx[k] + 4]);
+                                recs_addr.push_back(a);
+                            }
+                            if (tracked.size() <= 0 && idx[k] >= 4 && idx[k] + 8 < bytes / 4) {
+                                const u32* r = p + idx[k];
+                                LOG_INFO(Render,
+                                         "portrait: rec {:x} id {} w[-4..7] {:x} {:x} {:x} {:x} | {:x} {:x} {:x} {:x} {:x} {:x} {:x} {:x}",
+                                         a, r[0], r[-4], r[-3], r[-2], r[-1], r[0], r[1], r[2], r[3],
+                                         r[4], r[5], r[6], r[7]);
+                            }
+                        }
+                    }
+                }
+                if (off + bytes >= size) {
+                    break;
+                }
+            }
+        });
+        u32 best = 0, best_n = 0;
+        for (const auto& [id, n] : counts) {
+            if (n > best_n) {
+                best = id;
+                best_n = n;
+            }
+        }
+        for (const auto& [id, n] : counts) {
+            LOG_INFO(Render, "portrait: full scan id {} x{}", id, n);
+        }
+        // Most of these records are static roster entries, so the open player can't be told from
+        // them yet; it is learned from the records that change when another player is opened.
+        if (win_hi == 0 && !tracked.empty()) {
+            VAddr lo = ~VAddr{0}, hi = 0;
+            for (const auto& [a, t] : tracked) {
+                lo = std::min(lo, a);
+                hi = std::max(hi, a);
+            }
+            constexpr VAddr kPad = 128ull << 20;
+            win_lo = lo > kPad ? lo - kPad : 0;
+            win_hi = hi + kPad;
+        }
+        // The live record differs from the static roster entries in the word 4 after the id (the
+        // static ones all share one value): take the id of the records that stand out.
+        current = 0;
+        selection_generation.fetch_add(1);
+        {
+            std::unordered_map<u32, u32> w4;
+            u32 mode = 0, mode_n = 0;
+            for (const auto& r : recs) {
+                if (++w4[r.second] > mode_n) {
+                    mode_n = w4[r.second];
+                    mode = r.second;
+                }
+            }
+            std::unordered_map<u32, u32> odd;
+            // After a rescan only records at new addresses count: odd records that were already
+            // there are leftovers of earlier players.
+            for (size_t i = 0; i < recs.size(); ++i) {
+                if (recs[i].second != mode && (!force_rescan || !old_addrs.count(recs_addr[i]))) {
+                    ++odd[recs[i].first];
+                }
+            }
+            u32 best_odd = 0;
+            for (const auto& [id, cnt] : odd) {
+                if (cnt > best_odd) {
+                    best_odd = cnt;
+                    current = id;
+                }
+            }
+            if (force_rescan && odd.empty()) {
+                current = prev_current; // nothing new found: keep what the watched records said
+            }
+            LOG_INFO(Render, "portrait: record word4 mode {:x}, {} odd records, initial id {}", mode,
+                     odd.size(), current);
+        }
+        (void)best;
+        LOG_INFO(Render, "portrait: full scan tracked {} records, selected id {}", tracked.size(),
+                 current);
+        return current;
+    }
+    std::unordered_map<u32, u32> votes;
+    for (auto& [addr, t] : tracked) {
+        u32 v;
+        if (!ReadU32Safe(addr, &v) || v == t.last) {
+            continue;
+        }
+        const bool new_in = ids.count(v) != 0;
+        static std::atomic<u32> dbg_n{0};
+        if (dbg_n.fetch_add(1) < 300) {
+            LOG_INFO(Render, "portrait: record {:x} {} -> {}", addr, t.last, v);
+        }
+        // Only plausible player ids count; the fields also hold pointers and small counters.
+        if (new_in || (v >= 100 && v < 70000)) {
+            votes[new_in ? v : 0] += 1 + t.changes;
+            ++t.changes;
+        }
+        t.last = v;
+    }
+    u32 best = current, best_votes = 0;
+    for (const auto& [id, n] : votes) {
+        if (n > best_votes) {
+            best = id;
+            best_votes = n;
+        }
+    }
+    if (best_votes != 0 && best != current) {
+        LOG_INFO(Render, "portrait: selected id {} -> {} (votes {})", current, best, best_votes);
+        current = best;
+        selection_generation.fetch_add(1);
+    }
+    return current;
+}
+
+struct PortraitState {
+    u32 installed{0xFFFFFFFFu};
+    u64 last_frame{0};
+    u64 settle_until{0};
+    u32 settle_gen{0};
+    bool need_rescan{false};
+};
+std::mutex portrait_state_mtx;
+std::unordered_map<VAddr, PortraitState> portrait_state;
+PortraitDds portrait_original; // the unmodified silhouette, captured on first sight
+} // namespace
+
+void TextureCache::InstallPortrait(Image& image, u32 player_id) {
+    const auto& cfg = GetPortraitCfg();
+    const auto& info = image.info;
+    const PortraitDds* src = nullptr;
+    if (player_id != 0) {
+        static std::mutex cache_mtx;
+        static std::unordered_map<u32, PortraitDds> cache;
+        std::scoped_lock lk{cache_mtx};
+        auto it = cache.find(player_id);
+        if (it == cache.end()) {
+            it = cache.emplace(player_id, LoadPortraitDds(cfg.dir / fmt::format("{}.dds", player_id))).first;
+        }
+        if (it->second.ok) {
+            src = &it->second;
+        }
+    }
+    if (!src && cfg.fallback.ok) {
+        src = &cfg.fallback;
+    }
+    if (!src && portrait_original.ok) {
+        src = &portrait_original;
+    }
+    {
+        std::scoped_lock lk{portrait_state_mtx};
+        portrait_state[info.guest_address].installed = player_id;
+    }
+    LOG_INFO(Render, "portrait: showing picture for player id {} ({})", player_id,
+             !src ? "nothing" : src == &portrait_original ? "original" : src == &cfg.fallback ? "fallback" : "player file");
+    if (!src) {
+        return;
+    }
+    const u32 levels = std::min<u32>(src->mips, info.resources.levels);
+    SmallVector<vk::BufferImageCopy, 12> copies;
+    u64 total = 0;
+    for (u32 m = 0; m < levels; ++m) {
+        const u32 w = std::max(512u >> m, 1u);
+        const u32 h = std::max(340u >> m, 1u);
+        const u64 size = u64(Common::DivCeil(w, 4u)) * Common::DivCeil(h, 4u) * 16;
+        if (total + size > src->data.size()) {
+            break;
+        }
+        copies.push_back({
+            .bufferOffset = total,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                                 .mipLevel = m,
+                                 .baseArrayLayer = 0,
+                                 .layerCount = 1},
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {w, h, 1},
+        });
+        total += size;
+    }
+    if (copies.empty()) {
+        return;
+    }
+    const auto staging =
+        runtime.GetStagingPool().Request(total, MemoryType::HostUncached, 16, false);
+    std::memcpy(staging.mapped, src->data.data(), total);
+    staging.buffer->Flush(staging.offset, total);
+    for (auto& c : copies) {
+        c.bufferOffset += staging.offset;
+    }
+    scheduler.EndRendering();
+    runtime.UploadImage(&image, staging.buffer, copies);
+}
+
+void TextureCache::RefreshPortraitOnBind(Image& image) {
+    const auto& info = image.info;
+    if (info.size.width != 512 || info.size.height != 340 ||
+        info.pixel_format != vk::Format::eBc3UnormBlock || info.resources.layers != 1 ||
+        info.num_samples > 1 || image.usage.render_target || info.props.is_depth) {
+        return;
+    }
+    // The game updates its "open player" record a little after the portrait is first drawn. When the
+    // portrait comes back after not being drawn for a while, show the plain silhouette until the
+    // record has changed (or a short time has passed) so the previous player's picture is never shown.
+    const u64 frame = VideoCore::Perf::gpu_frame.load(std::memory_order_relaxed);
+    u32 installed;
+    u64 settle_until;
+    u32 settle_gen;
+    bool need_rescan;
+    {
+        std::scoped_lock lk{portrait_state_mtx};
+        const auto it = portrait_state.find(info.guest_address);
+        if (it == portrait_state.end()) {
+            return;
+        }
+        auto& st = it->second;
+        if (st.installed != 0xFFFFFFFFu && st.last_frame + 20 < frame) {
+            st.settle_until = frame + 30;
+            st.settle_gen = selection_generation.load();
+            st.need_rescan = true;
+        }
+        st.last_frame = frame;
+        installed = st.installed;
+        settle_until = st.settle_until;
+        settle_gen = st.settle_gen;
+        need_rescan = st.need_rescan;
+    }
+    u32 id = DetectSelectedPlayerId(false);
+    const bool unchanged = selection_generation.load() == settle_gen;
+    if (frame < settle_until && unchanged) {
+        id = 0;
+    } else if (need_rescan) {
+        // Nothing changed in the watched records since the portrait came back: the game may have
+        // moved them, so look again (limited to the area where they live).
+        if (unchanged) {
+            id = DetectSelectedPlayerId(false, true);
+        }
+        std::scoped_lock lk{portrait_state_mtx};
+        portrait_state[info.guest_address].need_rescan = false;
+    }
+    if (id != installed) {
+        InstallPortrait(image, id);
+    }
+}
+
+void TextureCache::ApplyPortraitOverride(Image& image) {
+    // Replaces the grey "no photo" silhouette (512x340 BC3 player portrait). Files are legacy DXT5 .dds
+    // with a mip chain, in <user dir>\portrait_override\ (or next to NHLPORT_PORTRAIT_OVERRIDE):
+    //   <player id>.dds  picture for that player (id = wBIz in the roster file)
+    //   silhouette.dds   optional fallback for every other player without a photo
+    // NHLPORT_SILHOUETTE_HASH overrides the content hash of the silhouette.
+    const auto& info = image.info;
+    if (info.size.width != 512 || info.size.height != 340 ||
+        info.pixel_format != vk::Format::eBc3UnormBlock || info.resources.layers != 1 ||
+        info.num_samples > 1 || image.usage.render_target || info.props.is_depth) {
+        return;
+    }
+    const auto& cfg = GetPortraitCfg();
+    if (!cfg.dir_exists) {
+        return;
+    }
+
+    // Read mip 0 back and compare its content with the known silhouette.
+    const u32 mip0_size = 128 * 85 * 16;
+    const auto download =
+        runtime.GetStagingPool().Request(mip0_size, MemoryType::HostCached, 16, false);
+    const vk::BufferImageCopy dl = {
+        .bufferOffset = download.offset,
+        .bufferRowLength = 0,
+        .bufferImageHeight = 0,
+        .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                             .mipLevel = 0,
+                             .baseArrayLayer = 0,
+                             .layerCount = 1},
+        .imageOffset = {0, 0, 0},
+        .imageExtent = {512, 340, 1},
+    };
+    scheduler.EndRendering();
+    runtime.DownloadImage(&image, download.buffer, std::span{&dl, 1});
+    scheduler.Finish();
+    download.Invalidate();
+    const u64 hash = XXH3_64bits(download.mapped, mip0_size);
+    static std::atomic<u32> logged{0};
+    const bool match = hash == cfg.hash;
+    if (logged.fetch_add(1) < 64) {
+        LOG_INFO(Render, "portrait upload hash {:016x} {}", hash, match ? "-> silhouette" : "(kept)");
+    }
+    if (!match) {
+        std::scoped_lock lk{portrait_state_mtx};
+        portrait_state.erase(info.guest_address);
+        return;
+    }
+
+    // Keep a copy of the untouched silhouette (all mips) so it can be put back for other players.
+    if (!portrait_original.ok) {
+        const u32 levels = info.resources.levels;
+        SmallVector<vk::BufferImageCopy, 12> copies;
+        u64 total = 0;
+        for (u32 m = 0; m < levels; ++m) {
+            const u32 w = std::max(512u >> m, 1u);
+            const u32 h = std::max(340u >> m, 1u);
+            copies.push_back({
+                .bufferOffset = total,
+                .bufferRowLength = 0,
+                .bufferImageHeight = 0,
+                .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor,
+                                     .mipLevel = m,
+                                     .baseArrayLayer = 0,
+                                     .layerCount = 1},
+                .imageOffset = {0, 0, 0},
+                .imageExtent = {w, h, 1},
+            });
+            total += u64(Common::DivCeil(w, 4u)) * Common::DivCeil(h, 4u) * 16;
+        }
+        const auto all = runtime.GetStagingPool().Request(total, MemoryType::HostCached, 16, false);
+        for (auto& c : copies) {
+            c.bufferOffset += all.offset;
+        }
+        runtime.DownloadImage(&image, all.buffer, copies);
+        scheduler.Finish();
+        all.Invalidate();
+        portrait_original.data.assign(static_cast<const u8*>(all.mapped),
+                                      static_cast<const u8*>(all.mapped) + total);
+        portrait_original.mips = levels;
+        portrait_original.ok = true;
+    }
+    {
+        std::scoped_lock lk{portrait_state_mtx};
+        portrait_state[info.guest_address].installed = 0xFFFFFFFFu;
+    }
+    InstallPortrait(image, DetectSelectedPlayerId(true));
 }
 
 void TextureCache::MarkAsMaybeDirty(ImageId image_id, Image& image) {
@@ -893,6 +1409,7 @@ ImageView& TextureCache::FindTexture(ImageId image_id, const ImageDesc& desc) {
         }
     }
     UpdateImage(image_id);
+    RefreshPortraitOnBind(image);
     return image.FindView(desc.view_info);
 }
 
@@ -1088,6 +1605,7 @@ void TextureCache::RefreshImage(Image& image) {
     Diag::C::tc_refresh.fetch_add(1, std::memory_order_relaxed);
     Diag::C::tc_refresh_bytes.fetch_add(image.info.guest_size, std::memory_order_relaxed);
     runtime.UploadImage(&image, buffer, image_copies);
+    ApplyPortraitOverride(image);
 }
 
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
