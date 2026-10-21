@@ -6,11 +6,8 @@ that extracts the game from your own PKG and starts it. No console, no CPU emula
 code runs directly on your processor, the PS4 system libraries are replaced by native Windows
 implementations, and the GPU work goes through Vulkan.
 
-> Slovenská verzia je nižšie: [Slovensky](#slovensky). Video: https://youtu.be/eGo1-W3FaYw
-
 | | |
 |---|---|
-| Video | [NHL 24 running on PC – YouTube](https://youtu.be/eGo1-W3FaYw) |
 | Ready-to-run package | [`release/`](release) – `launcher.exe`, `nhl24.exe`, runtime DLLs, clean `user\` template |
 | Current build | **v0.8.3** (2026-10-14), Windows 10/11 x64 |
 | Needs | your own NHL 24 PKG (base v01.00, optionally the update), a Vulkan 1.3 GPU |
@@ -41,11 +38,13 @@ CPU directly, at native speed. What the emulator provides is everything around i
   (`nhl24.exe --extract-pkg`), shows the installed version, exposes the useful settings (resolution,
   fullscreen, vsync, sharpening, language, controls, the Windows red-zone protection) and starts the game.
 
-## Support / Podpora
+## Support
 
-If this project is useful to you, you can support its development:
+If this fork is useful to you (crash fixes and roster tooling), you can support my work:
 
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/E1E61VGHII)
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/hishak)
+
+The NHL 24 port itself is the work of the original author, [HajDEO](https://github.com/HajDEO/nhl24pc) - you can support him too: [ko-fi.com/E1E61VGHII](https://ko-fi.com/E1E61VGHII)
 
 ## Playing
 
@@ -120,34 +119,3 @@ dumped as a PKG from a console you own. "NHL" and "EA SPORTS" are trademarks of 
 owners; this project is not affiliated with EA, the NHL or Sony. The emulator is derived from
 [shadPS4](https://github.com/shadps4-emu/shadPS4) (GPL-2.0-or-later); this repository is distributed
 under the same license, see `LICENSE` and `LICENSES/`.
-
----
-
-## Slovensky
-
-**NHL 24 (PS4) bežiace natívne na Windows.** Fork emulátora shadPS4 doladený pre jednu hru plus
-launcher, ktorý hru rozbalí z vášho PKG a spustí. Kód hry (x86-64) beží priamo na procesore bez emulácie
-CPU; systémové knižnice PS4 sú nahradené natívnou implementáciou (HLE) a grafika ide cez Vulkan
-s prekladom shaderov GCN → SPIR-V.
-
-**Video:** https://youtu.be/eGo1-W3FaYw
-
-**Hranie:** stiahnite repozitár (Code → Download ZIP), rozbaľte ho a prejdite do priečinka `release`
-(všetko potrebné je tam); spustite `launcher.exe`, cez **Install PKG** vyberte PKG **základnej hry** (v01.00)
-– hra sa rozbalí do `game\` vedľa launchera – a stlačte **PLAY**. **Update (patch) neinštalujte**: port potrebuje
-verziu hry 1.00, s update 1.6 hra zamrzne pri prvom vhadzovaní (issue #1).
-Uložené pozície, profil a shader cache vznikajú v `user\`; prvé minúty sa hra zasekáva (kompilácia
-shaderov), potom beží plynulo.
-
-**Požiadavky:** Windows 10/11 x64, GPU s Vulkan 1.3 (NVIDIA GTX 10xx/RTX, AMD RDNA), 8–16 GB RAM,
-asi 40 GB miesta na rozbalenú hru. Gamepad funguje automaticky, klávesnica tiež.
-
-**Známe problémy (v0.8.3):** update 1.6 zamrzne pri prvom vhadzovaní (používajte len základnú hru v01.00);
-občasné čierne stĺpce dlaždíc v prestrihoch s dynamickým rozlíšením
-(rozbor v `docs/DEVLOG.sk.md`), zriedkavé pády „device lost“. Ak hra padá pri načítaní zápasu (hneď po
-výbere tímov, chyba 0xc0000005), zapnite v launcheri **Ochrana red zone (Windows)** (predvolene vypnuté,
-experimentálne; rozbor v `docs/DEVLOG.sk.md`, sekcia „v0.8.3: ochrana red zone“).
-
-**Vývoj:** zdrojáky emulátora v `src/` (zmeny pre NHL sú označené `nhlport`), launcher v `launcher/`,
-skripty v `tools/`, denník vývoja v `docs/DEVLOG.sk.md`. Build: `tools\build_nhlport.ps1`,
-`launcher\build_launcher.ps1`, balík: `tools\make_release.ps1`.
