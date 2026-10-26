@@ -61,6 +61,16 @@ namespace NhlPort
             { "ups_off", new[] { "Vypnutý (bilineárne)", "Off (bilinear)" } },
             { "ups_fsr", new[] { "FSR", "FSR" } },
             { "ups_fsr_rcas", new[] { "FSR + RCAS zaostrenie", "FSR + RCAS sharpening" } },
+            { "ups_dlss_qual", new[] { "DLSS (Kvalita)", "DLSS (Quality)" } },
+            { "ups_dlss_bal", new[] { "DLSS (Vyvážené)", "DLSS (Balanced)" } },
+            { "ups_dlss_perf", new[] { "DLSS (Výkon)", "DLSS (Performance)" } },
+            { "ups_dlss_ultra", new[] { "DLSS (Ultra výkon)", "DLSS (Ultra Performance)" } },
+            { "ups_dlss_dlaa", new[] { "DLSS (DLAA natívne 1:1)", "DLSS (DLAA Native 1:1)" } },
+            { "ups_support_hint", new[] { "DLSS = RTX 20/30/40/50 • FSR = všetky GPU", "DLSS = RTX 20/30/40/50 only • FSR = All GPUs" } },
+            { "dlss_supported_gpus", new[] { "Podpora: Vyžaduje NVIDIA GeForce RTX (rad 20xx, 30xx, 40xx, 50xx s Tensor jadrami). Karty GTX a AMD DLSS nepodporujú – použite FSR.",
+                                             "Support: Requires NVIDIA GeForce RTX (20, 30, 40, 50 series with Tensor cores). GTX and AMD GPUs do not support DLSS – use AMD FSR." } },
+            { "fsr_supported_gpus", new[] { "Podpora: Univerzálny – funguje na všetkých kartách (NVIDIA GTX / RTX, AMD Radeon, Intel Arc).",
+                                            "Support: Universal – supported on all graphics cards (NVIDIA GTX / RTX, AMD Radeon, Intel Arc)." } },
             { "sharpness", new[] { "Zaostrenie", "Sharpness" } },
             { "vsync", new[] { "VSync", "VSync" } },
             { "vsync_desc", new[] { "Synchronizácia s obnovovacou frekvenciou (bez trhania, mierne vyššia odozva).", "Synchronises with the refresh rate (no tearing, slightly more input lag)." } },
@@ -68,6 +78,9 @@ namespace NhlPort
             { "redzone_desc", new[] { "Experimentálna oprava pádu pri načítaní zápasu (chyba 0xc0000005 hneď po výbere tímov). Zapni, ak ti hra takto padá; môže mierne znížiť výkon. Platí od ďalšieho spustenia.",
                                       "Experimental fix for the crash while a match loads (error 0xc0000005 right after team selection). Turn it on if the game crashes like that; may cost a little performance. Takes effect on the next start." } },
             { "redzone_short", new[] { "Red zone ✓", "Red zone ✓" } },
+            { "stretch_to_fill", new[] { "Vyplniť 21:9 ultrawide (bez čiernych pruhov)", "Stretch to fill 21:9 ultrawide (no black bars)" } },
+            { "stretch_to_fill_desc", new[] { "Vykreslí hru aj DLSS na celú šírku monitora bez bočných pruhov. Ideálne pre 3440x1440.",
+                                             "Renders the game and DLSS across the full screen with zero black bars. Ideal for 3440x1440." } },
             { "lang", new[] { "Jazyk launchera", "Launcher language" } },
             { "play", new[] { "HRAŤ", "PLAY" } },
             { "save", new[] { "Uložiť", "Save" } },
@@ -101,8 +114,16 @@ namespace NhlPort
             { "fsr_group", new[] { "AMD FidelityFX Super Resolution (FSR)", "AMD FidelityFX Super Resolution (FSR)" } },
             { "fsr_box", new[] { "FSR upscaling na rozlíšenie okna", "FSR upscaling to the window resolution" } },
             { "rcas_box", new[] { "RCAS zaostrenie", "RCAS sharpening" } },
-            { "display_note", new[] { "Hra vykresľuje natívne 1920x1080 (ako na PS4) a výstup sa škáluje na zvolené okno alebo obrazovku. FSR zlepší ostrosť pri väčších rozlíšeniach (1440p, 4K). Interné rozlíšenie hry sa nemení, aby sa nerozbilo rozloženie obrazu a menu.",
-                                       "The game renders at its native 1920x1080 (as on the PS4) and the output is scaled to the chosen window or screen. FSR improves sharpness at larger resolutions (1440p, 4K). The internal resolution stays fixed so the picture and menu layout stay intact." } },
+            { "dlss_group", new[] { "NVIDIA Deep Learning Super Sampling (DLSS)", "NVIDIA Deep Learning Super Sampling (DLSS)" } },
+            { "dlss_box", new[] { "DLSS AI upscaling", "DLSS AI upscaling" } },
+            { "dlss_quality", new[] { "Režim kvality:", "Quality mode:" } },
+            { "dlss_dlaa_item", new[] { "DLAA (natívne 1:1)", "DLAA (native 1:1)" } },
+            { "dlss_qual_item", new[] { "Kvalita (odporúčané)", "Quality (recommended)" } },
+            { "dlss_bal_item", new[] { "Vyvážené", "Balanced" } },
+            { "dlss_perf_item", new[] { "Výkon", "Performance" } },
+            { "dlss_ultra_item", new[] { "Ultra výkon", "Ultra Performance" } },
+            { "display_note", new[] { "Hra vykresľuje natívne 1920x1080 (ako na PS4) a výstup sa škáluje na zvolené okno alebo obrazovku. FSR a DLSS zlepšujú ostrosť pri väčších rozlíšeniach (1440p, 4K). Interné rozlíšenie hry sa nemení, aby sa nerozbilo rozloženie obrazu a menu.",
+                                       "The game renders at its native 1920x1080 (as on the PS4) and the output is scaled to the chosen window or screen. FSR and DLSS improve sharpness at larger resolutions (1440p, 4K). The internal resolution stays fixed so the picture and menu layout stay intact." } },
             { "version_line", new[] { "Windows  •  v{0}", "Windows  •  v{0}" } },
             { "game_line", new[] { "CUSA37933  •  verzia hry {0}", "CUSA37933  •  game version {0}" } },
             { "game_line_none", new[] { "CUSA37933  •  hra nie je nainštalovaná", "CUSA37933  •  game not installed" } },
@@ -490,6 +511,7 @@ namespace NhlPort
         TransparentLabel sharpValue, pkgReqLabel, summaryLabel, versionLabel, gameVersionLabel, statusLabel;
         CheckBox vsyncQuick;
         CheckBox redzoneQuick;
+        CheckBox stretchQuick;
         ImageButton playButton;
         FlatButton simpleBtn, advancedBtn;
         // pkg progress
@@ -510,10 +532,16 @@ namespace NhlPort
         CheckBox fullscreenBox;
         ComboBox fullscreenModeBox;
         CheckBox vsyncBox;
+        CheckBox stretchBox;
         CheckBox fsrBox;
         CheckBox rcasBox;
         TrackBar sharpnessBar;
         Label sharpnessLabel;
+        CheckBox dlssBox;
+        ComboBox dlssQualityBox;
+        TrackBar dlssSharpnessBar;
+        Label dlssSharpnessLabel;
+        bool isSyncing;
 
         readonly bool startAdvanced;
 
@@ -902,6 +930,19 @@ namespace NhlPort
             Gpu["fsr_enabled"] = fsrBox.Checked;
             Gpu["rcas_enabled"] = rcasBox.Checked;
             Gpu["rcas_attenuation"] = sharpnessBar.Value;
+            Gpu["dlss_enabled"] = dlssBox.Checked;
+            int dlssQualityVal = 1;
+            switch (dlssQualityBox.SelectedIndex)
+            {
+                case 0: dlssQualityVal = 1; break; // Quality
+                case 1: dlssQualityVal = 2; break; // Balanced
+                case 2: dlssQualityVal = 3; break; // Performance
+                case 3: dlssQualityVal = 4; break; // UltraPerformance
+                case 4: dlssQualityVal = 0; break; // DLAA
+            }
+            Gpu["dlss_quality"] = dlssQualityVal;
+            Gpu["dlss_sharpness"] = dlssSharpnessBar.Value;
+            Gpu["stretch_to_fill"] = stretchBox != null ? stretchBox.Checked : Convert.ToBoolean(GpuValue("stretch_to_fill", false));
             Gpu["vblank_frequency"] = 60;
             Launcher["language"] = Loc.Lang;
             // Windows static guest red-zone protection of the emulator (src/core/cpu_patches.cpp): fixes the
@@ -1051,16 +1092,48 @@ namespace NhlPort
             y += 22;
             upscalerBox = new ComboBox { Left = c1, Top = y, Width = cw, DropDownStyle = ComboBoxStyle.DropDownList };
             Theme.Style(upscalerBox);
-            upscalerBox.Items.AddRange(new object[] { Loc.T("ups_off"), Loc.T("ups_fsr"), Loc.T("ups_fsr_rcas") });
-            bool fsr = Convert.ToBoolean(GpuValue("fsr_enabled", false)), rcas = Convert.ToBoolean(GpuValue("rcas_enabled", true));
-            upscalerBox.SelectedIndex = !fsr ? 0 : (rcas ? 2 : 1);
+            upscalerBox.Items.AddRange(new object[] {
+                Loc.T("ups_off"),
+                Loc.T("ups_fsr"),
+                Loc.T("ups_fsr_rcas"),
+                Loc.T("ups_dlss_qual"),
+                Loc.T("ups_dlss_bal"),
+                Loc.T("ups_dlss_perf"),
+                Loc.T("ups_dlss_ultra"),
+                Loc.T("ups_dlss_dlaa")
+            });
+            bool dlss = Convert.ToBoolean(GpuValue("dlss_enabled", false));
+            int dlssQual = Convert.ToInt32(GpuValue("dlss_quality", 1));
+            bool fsr = Convert.ToBoolean(GpuValue("fsr_enabled", false));
+            bool rcas = Convert.ToBoolean(GpuValue("rcas_enabled", true));
+
+            int upscalerInitIdx = 0;
+            if (dlss)
+            {
+                if (dlssQual == 1) upscalerInitIdx = 3;
+                else if (dlssQual == 2) upscalerInitIdx = 4;
+                else if (dlssQual == 3) upscalerInitIdx = 5;
+                else if (dlssQual == 4) upscalerInitIdx = 6;
+                else if (dlssQual == 0) upscalerInitIdx = 7;
+                else upscalerInitIdx = 3;
+            }
+            else if (fsr)
+            {
+                upscalerInitIdx = rcas ? 2 : 1;
+            }
+            upscalerBox.SelectedIndex = upscalerInitIdx;
             quickPanel.Controls.Add(upscalerBox);
-            sharpBar = new GlassSlider { Left = c2 - 8, Top = y - 1, Width = cw - 60, Minimum = 0, Maximum = 1000, Value = Math.Max(0, Math.Min(1000, Convert.ToInt32(GpuValue("rcas_attenuation", 250)))) };
+
+            int initialSharp = dlss
+                ? Math.Max(0, Math.Min(1000, Convert.ToInt32(GpuValue("dlss_sharpness", 300))))
+                : Math.Max(0, Math.Min(1000, Convert.ToInt32(GpuValue("rcas_attenuation", 250))));
+            sharpBar = new GlassSlider { Left = c2 - 8, Top = y - 1, Width = cw - 60, Minimum = 0, Maximum = 1000, Value = initialSharp };
             quickPanel.Controls.Add(sharpBar);
             sharpValue = new TransparentLabel { Left = c2 + cw - 60, Top = y + 4, Width = 60, Height = 20, Font = Theme.Label, Text = sharpBar.Value.ToString() };
             sharpBar.ValueChanged += delegate { sharpValue.Text = sharpBar.Value.ToString(); };
-            sharpBar.Enabled = upscalerBox.SelectedIndex == 2;
+            sharpBar.Enabled = (upscalerInitIdx == 2 || upscalerInitIdx >= 3);
             quickPanel.Controls.Add(sharpValue);
+            quickPanel.Controls.Add(new TransparentLabel { Left = c1, Top = y + 26, Width = cw + 30, Height = 20, Font = Theme.Small, ForeColor = Color.FromArgb(160, 190, 225), Text = Loc.T("ups_support_hint") });
             y += 52;
             quickPanel.Controls.Add(new TransparentLabel { Left = c1, Top = y, Width = cw, Height = 20, Font = Theme.Label, Text = Loc.T("lang") });
             y += 22;
@@ -1073,13 +1146,18 @@ namespace NhlPort
             vsyncQuick = new CheckBox { Left = c2, Top = y + 2, Width = cw, Height = 24, Font = Theme.Body, ForeColor = Color.White, BackColor = Color.Transparent, Text = Loc.T("vsync"),
                 Checked = Convert.ToString(GpuValue("present_mode", "Mailbox")) == "Fifo" };
             quickPanel.Controls.Add(vsyncQuick);
-            quickPanel.Controls.Add(new TransparentLabel { Left = c2, Top = y + 28, Width = cw, Height = 40, Font = Theme.Small, ForeColor = Color.FromArgb(200, 210, 225), Text = Loc.T("vsync_desc") });
-            y += 70;
-            redzoneQuick = new CheckBox { Left = c1, Top = y, Width = 600, Height = 24, Font = Theme.Body, ForeColor = Color.White, BackColor = Color.Transparent, Text = Loc.T("redzone"),
+            quickPanel.Controls.Add(new TransparentLabel { Left = c2, Top = y + 28, Width = cw, Height = 36, Font = Theme.Small, ForeColor = Color.FromArgb(200, 210, 225), Text = Loc.T("vsync_desc") });
+            y += 66;
+            stretchQuick = new CheckBox { Left = c1, Top = y, Width = cw + 30, Height = 24, Font = Theme.Body, ForeColor = Color.White, BackColor = Color.Transparent, Text = Loc.T("stretch_to_fill"),
+                Checked = Convert.ToBoolean(GpuValue("stretch_to_fill", false)) };
+            quickPanel.Controls.Add(stretchQuick);
+            quickPanel.Controls.Add(new TransparentLabel { Left = c1, Top = y + 24, Width = cw + 30, Height = 36, Font = Theme.Small, ForeColor = Color.FromArgb(200, 210, 225), Text = Loc.T("stretch_to_fill_desc") });
+            redzoneQuick = new CheckBox { Left = c2, Top = y, Width = cw + 30, Height = 24, Font = Theme.Body, ForeColor = Color.White, BackColor = Color.Transparent, Text = Loc.T("redzone"),
                 Checked = ToBool(GeneralValue("redzone_patches", false), false) };
             quickPanel.Controls.Add(redzoneQuick);
-            quickPanel.Controls.Add(new TransparentLabel { Left = c1, Top = y + 26, Width = 600, Height = 44, Font = Theme.Small, ForeColor = Color.FromArgb(200, 210, 225), Text = Loc.T("redzone_desc") });
+            quickPanel.Controls.Add(new TransparentLabel { Left = c2, Top = y + 24, Width = cw + 30, Height = 36, Font = Theme.Small, ForeColor = Color.FromArgb(200, 210, 225), Text = Loc.T("redzone_desc") });
             redzoneQuick.CheckedChanged += delegate { RefreshSummary(); };
+            stretchQuick.CheckedChanged += delegate { if (stretchBox != null) stretchBox.Checked = stretchQuick.Checked; RefreshSummary(); };
 
             // the quick controls mirror the advanced ones
             outputBox.TextChanged += delegate { resolutionBox.Text = outputBox.Text; RefreshSummary(); };
@@ -1091,12 +1169,70 @@ namespace NhlPort
             };
             upscalerBox.SelectedIndexChanged += delegate
             {
-                fsrBox.Checked = upscalerBox.SelectedIndex != 0;
-                rcasBox.Checked = upscalerBox.SelectedIndex == 2;
-                sharpBar.Enabled = upscalerBox.SelectedIndex == 2;
-                RefreshSummary();
+                if (isSyncing || fsrBox == null || dlssBox == null) return;
+                isSyncing = true;
+                try
+                {
+                    int idx = upscalerBox.SelectedIndex;
+                    if (idx == 0)
+                    {
+                        fsrBox.Checked = false;
+                        rcasBox.Checked = false;
+                        dlssBox.Checked = false;
+                        sharpBar.Enabled = false;
+                    }
+                    else if (idx == 1)
+                    {
+                        dlssBox.Checked = false;
+                        fsrBox.Checked = true;
+                        rcasBox.Checked = false;
+                        sharpBar.Enabled = false;
+                    }
+                    else if (idx == 2)
+                    {
+                        dlssBox.Checked = false;
+                        fsrBox.Checked = true;
+                        rcasBox.Checked = true;
+                        sharpBar.Enabled = true;
+                        sharpBar.Value = sharpnessBar.Value;
+                    }
+                    else
+                    {
+                        fsrBox.Checked = false;
+                        rcasBox.Checked = false;
+                        dlssBox.Checked = true;
+                        sharpBar.Enabled = true;
+                        int qIdx = (idx == 3) ? 0 : (idx == 4) ? 1 : (idx == 5) ? 2 : (idx == 6) ? 3 : 4;
+                        dlssQualityBox.SelectedIndex = qIdx;
+                        sharpBar.Value = dlssSharpnessBar.Value;
+                    }
+                    rcasBox.Enabled = fsrBox.Checked;
+                    sharpnessBar.Enabled = fsrBox.Checked && rcasBox.Checked;
+                    dlssQualityBox.Enabled = dlssBox.Checked;
+                    dlssSharpnessBar.Enabled = dlssBox.Checked;
+                    RefreshSummary();
+                }
+                finally
+                {
+                    isSyncing = false;
+                }
             };
-            sharpBar.ValueChanged += delegate { sharpnessBar.Value = sharpBar.Value; };
+
+            sharpBar.ValueChanged += delegate
+            {
+                sharpValue.Text = sharpBar.Value.ToString();
+                if (isSyncing || sharpnessBar == null || dlssSharpnessBar == null) return;
+                if (upscalerBox.SelectedIndex >= 3)
+                {
+                    if (dlssSharpnessBar.Value != sharpBar.Value)
+                        dlssSharpnessBar.Value = sharpBar.Value;
+                }
+                else if (upscalerBox.SelectedIndex == 2)
+                {
+                    if (sharpnessBar.Value != sharpBar.Value)
+                        sharpnessBar.Value = sharpBar.Value;
+                }
+            };
             vsyncQuick.CheckedChanged += delegate { vsyncBox.Checked = vsyncQuick.Checked; RefreshSummary(); };
         }
 
@@ -1154,18 +1290,63 @@ namespace NhlPort
             y += 40;
             vsyncBox = new CheckBox { Left = 20, Top = y, Width = 500, ForeColor = Color.White, BackColor = Color.Transparent, Font = Theme.Body, Text = Loc.T("vsync") + " – " + Loc.T("vsync_desc"), Checked = vsyncQuick.Checked };
             displayTab.Controls.Add(vsyncBox);
-            y += 50;
-            var fsrGroup = new GroupBox { Left = 20, Top = y, Width = 640, Height = 150, ForeColor = Color.White, Font = Theme.Body, Text = Loc.T("fsr_group") };
-            fsrBox = new CheckBox { Left = 15, Top = 25, Width = 400, ForeColor = Color.White, Text = Loc.T("fsr_box"), Checked = upscalerBox.SelectedIndex != 0 };
-            rcasBox = new CheckBox { Left = 15, Top = 55, Width = 400, ForeColor = Color.White, Text = Loc.T("rcas_box"), Checked = upscalerBox.SelectedIndex == 2 };
-            sharpnessBar = new TrackBar { Left = 15, Top = 85, Width = 400, Minimum = 0, Maximum = 1000, TickFrequency = 100, Value = sharpBar.Value, BackColor = Color.FromArgb(24, 31, 42) };
-            sharpnessLabel = new Label { Left = 430, Top = 90, Width = 180, ForeColor = Color.White };
+            y += 35;
+            stretchBox = new CheckBox { Left = 20, Top = y, Width = 800, ForeColor = Color.White, BackColor = Color.Transparent, Font = Theme.Body,
+                Text = Loc.T("stretch_to_fill") + " – " + Loc.T("stretch_to_fill_desc"), Checked = Convert.ToBoolean(GpuValue("stretch_to_fill", false)) };
+            displayTab.Controls.Add(stretchBox);
+            y += 45;
+            var fsrGroup = new GroupBox { Left = 20, Top = y, Width = 510, Height = 210, ForeColor = Color.White, Font = Theme.Body, Text = Loc.T("fsr_group") };
+            fsrBox = new CheckBox { Left = 15, Top = 25, Width = 470, ForeColor = Color.White, Text = Loc.T("fsr_box"), Checked = Convert.ToBoolean(GpuValue("fsr_enabled", false)) };
+            rcasBox = new CheckBox { Left = 15, Top = 55, Width = 470, ForeColor = Color.White, Text = Loc.T("rcas_box"), Checked = Convert.ToBoolean(GpuValue("rcas_enabled", true)) };
+            rcasBox.Enabled = fsrBox.Checked;
+            sharpnessBar = new TrackBar { Left = 15, Top = 90, Width = 330, Minimum = 0, Maximum = 1000, TickFrequency = 100, Value = Math.Max(0, Math.Min(1000, Convert.ToInt32(GpuValue("rcas_attenuation", 250)))), BackColor = Color.FromArgb(24, 31, 42) };
+            sharpnessBar.Enabled = fsrBox.Checked && rcasBox.Checked;
+            sharpnessLabel = new Label { Left = 355, Top = 95, Width = 140, ForeColor = Color.White };
             sharpnessBar.ValueChanged += delegate { sharpnessLabel.Text = Loc.T("sharpness") + ": " + sharpnessBar.Value; };
             sharpnessLabel.Text = Loc.T("sharpness") + ": " + sharpnessBar.Value;
-            fsrGroup.Controls.Add(fsrBox); fsrGroup.Controls.Add(rcasBox); fsrGroup.Controls.Add(sharpnessBar); fsrGroup.Controls.Add(sharpnessLabel);
+            var fsrGpuLbl = new Label { Left = 15, Top = 145, Width = 480, Height = 55, ForeColor = Color.FromArgb(170, 200, 230), BackColor = Color.Transparent, Font = Theme.Small, Text = Loc.T("fsr_supported_gpus") };
+            fsrGroup.Controls.Add(fsrBox); fsrGroup.Controls.Add(rcasBox); fsrGroup.Controls.Add(sharpnessBar); fsrGroup.Controls.Add(sharpnessLabel); fsrGroup.Controls.Add(fsrGpuLbl);
             displayTab.Controls.Add(fsrGroup);
-            y += 170;
-            displayTab.Controls.Add(new Label { Left = 20, Top = y, Width = 1000, Height = 80, ForeColor = Color.FromArgb(200, 210, 225), BackColor = Color.Transparent, Font = Theme.Small, Text = Loc.T("display_note") });
+
+            var dlssGroup = new GroupBox { Left = 550, Top = y, Width = 520, Height = 210, ForeColor = Color.White, Font = Theme.Body, Text = Loc.T("dlss_group") };
+            dlssBox = new CheckBox { Left = 15, Top = 25, Width = 480, ForeColor = Color.White, Text = Loc.T("dlss_box"), Checked = Convert.ToBoolean(GpuValue("dlss_enabled", false)) };
+            var dlssQualityLbl = new Label { Left = 15, Top = 58, Width = 120, ForeColor = Color.White, BackColor = Color.Transparent, Font = Theme.Body, Text = Loc.T("dlss_quality") };
+            dlssQualityBox = new ComboBox { Left = 140, Top = 55, Width = 260, DropDownStyle = ComboBoxStyle.DropDownList };
+            Theme.Style(dlssQualityBox);
+            dlssQualityBox.Items.AddRange(new object[] {
+                Loc.T("dlss_qual_item"),
+                Loc.T("dlss_bal_item"),
+                Loc.T("dlss_perf_item"),
+                Loc.T("dlss_ultra_item"),
+                Loc.T("dlss_dlaa_item")
+            });
+            int dlssQualInit = Convert.ToInt32(GpuValue("dlss_quality", 1));
+            int qBoxIdx = 0;
+            if (dlssQualInit == 0) qBoxIdx = 4;
+            else if (dlssQualInit == 1) qBoxIdx = 0;
+            else if (dlssQualInit == 2) qBoxIdx = 1;
+            else if (dlssQualInit == 3) qBoxIdx = 2;
+            else if (dlssQualInit == 4) qBoxIdx = 3;
+            dlssQualityBox.SelectedIndex = qBoxIdx;
+            dlssQualityBox.Enabled = dlssBox.Checked;
+
+            dlssSharpnessBar = new TrackBar { Left = 15, Top = 95, Width = 330, Minimum = 0, Maximum = 1000, TickFrequency = 100, Value = Math.Max(0, Math.Min(1000, Convert.ToInt32(GpuValue("dlss_sharpness", 300)))), BackColor = Color.FromArgb(24, 31, 42) };
+            dlssSharpnessBar.Enabled = dlssBox.Checked;
+            dlssSharpnessLabel = new Label { Left = 355, Top = 100, Width = 150, ForeColor = Color.White };
+            dlssSharpnessBar.ValueChanged += delegate { dlssSharpnessLabel.Text = Loc.T("sharpness") + ": " + dlssSharpnessBar.Value; };
+            dlssSharpnessLabel.Text = Loc.T("sharpness") + ": " + dlssSharpnessBar.Value;
+            var dlssGpuLbl = new Label { Left = 15, Top = 145, Width = 490, Height = 55, ForeColor = Color.FromArgb(170, 200, 230), BackColor = Color.Transparent, Font = Theme.Small, Text = Loc.T("dlss_supported_gpus") };
+
+            dlssGroup.Controls.Add(dlssBox);
+            dlssGroup.Controls.Add(dlssQualityLbl);
+            dlssGroup.Controls.Add(dlssQualityBox);
+            dlssGroup.Controls.Add(dlssSharpnessBar);
+            dlssGroup.Controls.Add(dlssSharpnessLabel);
+            dlssGroup.Controls.Add(dlssGpuLbl);
+            displayTab.Controls.Add(dlssGroup);
+
+            y += 225;
+            displayTab.Controls.Add(new Label { Left = 20, Top = y, Width = 1050, Height = 75, ForeColor = Color.FromArgb(200, 210, 225), BackColor = Color.Transparent, Font = Theme.Small, Text = Loc.T("display_note") });
 
             // advanced -> quick mirroring
             resolutionBox.TextChanged += delegate { if (outputBox.Text != resolutionBox.Text) outputBox.Text = resolutionBox.Text; };
@@ -1176,15 +1357,69 @@ namespace NhlPort
             };
             fullscreenBox.CheckedChanged += syncMode;
             fullscreenModeBox.SelectedIndexChanged += syncMode;
-            EventHandler syncFsr = delegate
+
+            Action syncUpscalerToQuick = delegate
             {
-                int idx = !fsrBox.Checked ? 0 : (rcasBox.Checked ? 2 : 1);
-                if (upscalerBox.SelectedIndex != idx) upscalerBox.SelectedIndex = idx;
+                if (isSyncing || upscalerBox == null) return;
+                isSyncing = true;
+                try
+                {
+                    if (dlssBox.Checked)
+                    {
+                        int qIdx = dlssQualityBox.SelectedIndex;
+                        int uIdx = (qIdx == 0) ? 3 : (qIdx == 1) ? 4 : (qIdx == 2) ? 5 : (qIdx == 3) ? 6 : 7;
+                        upscalerBox.SelectedIndex = uIdx;
+                        sharpBar.Enabled = true;
+                        sharpBar.Value = dlssSharpnessBar.Value;
+                    }
+                    else if (fsrBox.Checked)
+                    {
+                        upscalerBox.SelectedIndex = rcasBox.Checked ? 2 : 1;
+                        sharpBar.Enabled = rcasBox.Checked;
+                        sharpBar.Value = sharpnessBar.Value;
+                    }
+                    else
+                    {
+                        upscalerBox.SelectedIndex = 0;
+                        sharpBar.Enabled = false;
+                    }
+                    rcasBox.Enabled = fsrBox.Checked;
+                    sharpnessBar.Enabled = fsrBox.Checked && rcasBox.Checked;
+                    dlssQualityBox.Enabled = dlssBox.Checked;
+                    dlssSharpnessBar.Enabled = dlssBox.Checked;
+                    RefreshSummary();
+                }
+                finally
+                {
+                    isSyncing = false;
+                }
             };
-            fsrBox.CheckedChanged += syncFsr;
-            rcasBox.CheckedChanged += syncFsr;
-            sharpnessBar.ValueChanged += delegate { if (sharpBar.Value != sharpnessBar.Value) sharpBar.Value = sharpnessBar.Value; };
+
+            fsrBox.CheckedChanged += delegate
+            {
+                if (fsrBox.Checked && dlssBox.Checked) dlssBox.Checked = false;
+                syncUpscalerToQuick();
+            };
+            rcasBox.CheckedChanged += delegate { syncUpscalerToQuick(); };
+            sharpnessBar.ValueChanged += delegate
+            {
+                if (!isSyncing && fsrBox.Checked && sharpBar.Value != sharpnessBar.Value)
+                    sharpBar.Value = sharpnessBar.Value;
+            };
+
+            dlssBox.CheckedChanged += delegate
+            {
+                if (dlssBox.Checked && fsrBox.Checked) fsrBox.Checked = false;
+                syncUpscalerToQuick();
+            };
+            dlssQualityBox.SelectedIndexChanged += delegate { syncUpscalerToQuick(); };
+            dlssSharpnessBar.ValueChanged += delegate
+            {
+                if (!isSyncing && dlssBox.Checked && sharpBar.Value != dlssSharpnessBar.Value)
+                    sharpBar.Value = dlssSharpnessBar.Value;
+            };
             vsyncBox.CheckedChanged += delegate { if (vsyncQuick.Checked != vsyncBox.Checked) vsyncQuick.Checked = vsyncBox.Checked; };
+            stretchBox.CheckedChanged += delegate { if (stretchQuick != null && stretchQuick.Checked != stretchBox.Checked) stretchQuick.Checked = stretchBox.Checked; RefreshSummary(); };
 
             advancedView.Controls.Add(tabs);
         }
@@ -1259,6 +1494,7 @@ namespace NhlPort
             parts.Add(displayModeBox.SelectedIndex >= 0 ? (string)displayModeBox.Items[displayModeBox.SelectedIndex] : "");
             parts.Add(upscalerBox.SelectedIndex >= 0 ? (string)upscalerBox.Items[upscalerBox.SelectedIndex] : "");
             parts.Add(Loc.T("vsync") + (vsyncQuick.Checked ? " ✓" : " ✗"));
+            if (stretchQuick != null && stretchQuick.Checked) parts.Add("21:9 FILL");
             if (redzoneQuick != null && redzoneQuick.Checked) parts.Add(Loc.T("redzone_short"));
             summaryLabel.Text = string.Join("   •   ", parts.ToArray()).ToUpperInvariant();
         }
@@ -1648,7 +1884,19 @@ namespace NhlPort
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new LauncherForm(Array.IndexOf(args, "--advanced") >= 0));
+            try
+            {
+                Application.Run(new LauncherForm(Array.IndexOf(args, "--advanced") >= 0));
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "launcher_crash.log"), ex.ToString());
+                }
+                catch { }
+                MessageBox.Show(ex.ToString(), "NHL24 Launcher Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
     }
 }
