@@ -618,10 +618,26 @@ bool BufferCache::SynchronizeMemoryFromImage(const Buffer* arena, VAddr device_a
         return false;
     }
     Image& image = texture_cache.GetImage(image_id);
-    ASSERT_MSG(device_addr == image.info.guest_address,
-               "Texel buffer aliases image subresources {:x} : {:x}", device_addr,
-               image.info.guest_address);
-    const u64 arena_offset = arena->Offset(device_addr);
+    if (device_addr != image.info.guest_address) {
+        // nhlport: the texel buffer starts inside the image (NHL 24 hit this after replays with
+        // a 0x34 byte offset). Write the whole image back at its own address so the bytes the
+        // buffer reads are the image's bytes, instead of aborting.
+        static std::atomic<u64> count{0};
+        const u64 k = count.fetch_add(1, std::memory_order_relaxed);
+        const bool in_arena = image.info.guest_address >= arena->CpuAddr();
+        if (k < 20 || k % 1000 == 0) {
+            LOG_WARNING(Render_Vulkan,
+                        "texel buffer aliases image subresources #{}: buffer {:#x} inside image "
+                        "{:#x} ({}x{} {}), {}",
+                        k, device_addr, image.info.guest_address, image.info.size.width,
+                        image.info.size.height, vk::to_string(image.info.pixel_format),
+                        in_arena ? "synced from image start" : "image outside arena, skipped");
+        }
+        if (!in_arena) {
+            return false;
+        }
+    }
+    const u64 arena_offset = arena->Offset(image.info.guest_address);
     boost::container::small_vector<vk::BufferImageCopy, 8> buffer_copies;
     for (u32 mip = 0; mip < image.info.resources.levels; mip++) {
         const auto& mip_info = image.info.mips_layout[mip];
